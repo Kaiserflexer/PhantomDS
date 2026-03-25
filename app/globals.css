@@ -1,0 +1,378 @@
+:root {
+  color-scheme: dark;
+  --bg: #05010a;
+  --bg-soft: rgba(15, 10, 25, 0.9);
+  --bg-card: rgba(12, 8, 22, 0.92);
+  --text: #f5efff;
+  --muted: #b7acd1;
+  --line: rgba(162, 97, 255, 0.16);
+  --line-strong: rgba(187, 124, 255, 0.42);
+  --primary: #9d58ff;
+  --primary-2: #5b16ff;
+  --success: #34d399;
+  --warning: #f59e0b;
+  --shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(157, 88, 255, 0.2), transparent 30%),
+    radial-gradient(circle at top right, rgba(91, 22, 255, 0.16), transparent 26%),
+    linear-gradient(160deg, #020106 0%, #080312 45%, #020106 100%);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.page-shell {
+  width: min(1440px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 48px;
+}
+
+.hero,
+.panel,
+.card,
+.editor {
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 28px;
+  border-radius: 30px;
+  background:
+    linear-gradient(135deg, rgba(157, 88, 255, 0.18), rgba(5, 2, 16, 0.82)),
+    rgba(9, 5, 18, 0.95);
+}
+
+.hero-grid,
+.dashboard-grid,
+.split-fields {
+  display: grid;
+  gap: 24px;
+}
+
+.hero-grid {
+  grid-template-columns: 1.5fr 1fr;
+}
+
+.dashboard-grid {
+  margin-top: 24px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+}
+
+.hero h1 {
+  margin: 16px 0 12px;
+  font-size: clamp(40px, 6vw, 68px);
+  line-height: 0.95;
+}
+
+.hero p,
+.muted {
+  color: var(--muted);
+}
+
+.badge,
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hero-stats,
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stat-card {
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.stat-value {
+  margin-top: 12px;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.panel {
+  padding: 22px;
+  border-radius: 28px;
+}
+
+.panel-header,
+.card-title,
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-title {
+  align-items: flex-start;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.panel-subtitle {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.card {
+  padding: 18px;
+  border-radius: 22px;
+  background: var(--bg-card);
+}
+
+.form-grid,
+.field {
+  display: grid;
+  gap: 14px;
+}
+
+.field label {
+  font-size: 14px;
+  color: #ddd1f7;
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 13px 14px;
+  background: rgba(2, 1, 8, 0.68);
+  color: var(--text);
+  outline: none;
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 3px rgba(157, 88, 255, 0.14);
+}
+
+.split-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.button,
+.ghost-button,
+.icon-button {
+  border: none;
+  cursor: pointer;
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.button:hover,
+.ghost-button:hover,
+.icon-button:hover {
+  transform: translateY(-1px);
+}
+
+.button {
+  padding: 12px 16px;
+  color: white;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+}
+
+.ghost-button,
+.icon-button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.ghost-button {
+  padding: 10px 14px;
+  border-radius: 14px;
+}
+
+.icon-button {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+}
+
+.editor {
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.toolbar {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  padding: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.editor-surface {
+  min-height: 250px;
+  padding: 18px;
+  outline: none;
+  line-height: 1.6;
+}
+
+.editor-surface:empty::before {
+  content: attr(data-placeholder);
+  color: rgba(183, 172, 209, 0.62);
+}
+
+.editor-surface h1,
+.editor-surface h2,
+.editor-surface h3 {
+  margin-top: 1.1em;
+}
+
+.task-meta,
+.note-meta,
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pill.todo {
+  color: #93c5fd;
+}
+
+.pill.in_progress {
+  color: var(--warning);
+}
+
+.pill.done {
+  color: var(--success);
+}
+
+.empty-state {
+  padding: 24px 18px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 50;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(18px);
+  animation: toast-in 180ms ease-out;
+}
+
+.toast-success {
+  color: #d1fae5;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22), rgba(17, 24, 39, 0.95));
+}
+
+.toast-error {
+  color: #ffe4e6;
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.22), rgba(17, 24, 39, 0.95));
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (max-width: 1100px) {
+  .hero-grid,
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .page-shell {
+    width: min(100vw - 20px, 100%);
+    padding-top: 16px;
+  }
+
+  .hero,
+  .panel {
+    padding: 18px;
+    border-radius: 24px;
+  }
+
+  .hero-stats,
+  .split-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .hero h1 {
+    font-size: 40px;
+  }
+
+  .toast {
+    right: 10px;
+    left: 10px;
+    bottom: 12px;
+    max-width: none;
+    min-width: 0;
+  }
+}
