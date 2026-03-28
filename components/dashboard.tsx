@@ -80,8 +80,8 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
   async function handleCreateNote(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!noteTitle.trim()) {
-      showToast("error", "Enter a note title first.");
+    if (!noteTitle.trim() && !summarize(noteContent)) {
+      showToast("error", "Write a note or add a title first.");
       return;
     }
 
@@ -105,11 +105,18 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
           return;
         }
 
+        const note = (await response.json()) as NoteRecord;
+        setNotes((current) => [note, ...current].sort((left, right) => {
+          if (left.isPinned !== right.isPinned) {
+            return Number(right.isPinned) - Number(left.isPinned);
+          }
+
+          return right.updatedAt.localeCompare(left.updatedAt);
+        }));
         setNoteTitle("");
         setNotePinned(false);
         setNoteContent("");
         showToast("success", "Note saved.");
-        await refreshData();
       } catch {
         showToast("error", "Network error while saving note.");
       }
@@ -117,6 +124,9 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
   }
 
   async function handleDeleteNote(id: string) {
+    const previousNotes = notes;
+    setNotes((current) => current.filter((note) => note.id !== id));
+
     startTransition(async () => {
       try {
         const response = await fetch(`/api/notes?id=${encodeURIComponent(id)}`, {
@@ -124,13 +134,14 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
         });
 
         if (!response.ok) {
+          setNotes(previousNotes);
           showToast("error", await readErrorMessage(response, "Failed to delete note."));
           return;
         }
 
-        setNotes((current) => current.filter((note) => note.id !== id));
         showToast("success", "Note deleted.");
       } catch {
+        setNotes(previousNotes);
         showToast("error", "Network error while deleting note.");
       }
     });
@@ -165,13 +176,14 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
           return;
         }
 
+        const task = (await response.json()) as TaskRecord;
+        setTasks((current) => [task, ...current].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
         setTaskTitle("");
         setTaskDescription("");
         setTaskStatus("todo");
         setTaskPriority("medium");
         setTaskDueDate("");
         showToast("success", "Task saved.");
-        await refreshData();
       } catch {
         showToast("error", "Network error while saving task.");
       }
@@ -179,6 +191,9 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
   }
 
   async function handleDeleteTask(id: string) {
+    const previousTasks = tasks;
+    setTasks((current) => current.filter((task) => task.id !== id));
+
     startTransition(async () => {
       try {
         const response = await fetch(`/api/tasks?id=${encodeURIComponent(id)}`, {
@@ -186,13 +201,14 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
         });
 
         if (!response.ok) {
+          setTasks(previousTasks);
           showToast("error", await readErrorMessage(response, "Failed to delete task."));
           return;
         }
 
-        setTasks((current) => current.filter((task) => task.id !== id));
         showToast("success", "Task deleted.");
       } catch {
+        setTasks(previousTasks);
         showToast("error", "Network error while deleting task.");
       }
     });
@@ -246,7 +262,12 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
               <form className="form-grid" onSubmit={handleCreateNote}>
                 <div className="field">
                   <label htmlFor="note-title">Title</label>
-                  <input id="note-title" value={noteTitle} onChange={(event) => setNoteTitle(event.target.value)} />
+                  <input
+                    id="note-title"
+                    value={noteTitle}
+                    placeholder="Optional title"
+                    onChange={(event) => setNoteTitle(event.target.value)}
+                  />
                 </div>
 
                 <div className="section-actions">
