@@ -22,6 +22,17 @@ export function summarize(html: string) {
   return stripHtml(html).slice(0, 160);
 }
 
+export function deriveTitle(title: string, content: string, fallback: string) {
+  const trimmedTitle = title.trim();
+
+  if (trimmedTitle) {
+    return trimmedTitle;
+  }
+
+  const extracted = stripHtml(content).slice(0, 48).trim();
+  return extracted || fallback;
+}
+
 export function formatDate(value: string | null) {
   if (!value) {
     return "No deadline";

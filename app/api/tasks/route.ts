@@ -1,15 +1,22 @@
 import { NextResponse } from "next/server";
-import { readStore, writeStore } from "@/lib/blob-store";
+import { readTasks, writeTasks } from "@/lib/blob-store";
 import type { TaskPriority, TaskRecord, TaskStatus } from "@/lib/types";
 import { createId, nowIso } from "@/lib/utils";
 
 const allowedStatuses = new Set<TaskStatus>(["todo", "in_progress", "done"]);
 const allowedPriorities = new Set<TaskPriority>(["low", "medium", "high"]);
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  const store = await readStore();
-  const tasks = [...store.tasks].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-  return NextResponse.json(tasks);
+  const tasks = await readTasks();
+  const sorted = [...tasks].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+  return NextResponse.json(sorted, {
+    headers: {
+      "Cache-Control": "no-store"
+    }
+  });
 }
 
 export async function POST(request: Request) {
@@ -36,15 +43,15 @@ export async function POST(request: Request) {
       updatedAt: timestamp
     };
 
-    const store = await readStore();
-    const nextStore = {
-      ...store,
-      tasks: [task, ...store.tasks]
-    };
+    const tasks = await readTasks();
+    await writeTasks([task, ...tasks]);
 
-    await writeStore(nextStore);
-
-    return NextResponse.json(task, { status: 201 });
+    return NextResponse.json(task, {
+      status: 201,
+      headers: {
+        "Cache-Control": "no-store"
+      }
+    });
   } catch (error) {
     return NextResponse.json(
       {
@@ -64,19 +71,23 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Task id is required." }, { status: 400 });
     }
 
-    const store = await readStore();
-    const nextTasks = store.tasks.filter((task) => task.id !== id);
+    const tasks = await readTasks();
+    const nextTasks = tasks.filter((task) => task.id !== id);
 
-    if (nextTasks.length === store.tasks.length) {
+    if (nextTasks.length === tasks.length) {
       return NextResponse.json({ error: "Task not found." }, { status: 404 });
     }
 
-    await writeStore({
-      ...store,
-      tasks: nextTasks
-    });
+    await writeTasks(nextTasks);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json(
+      { success: true },
+      {
+        headers: {
+          "Cache-Control": "no-store"
+        }
+      }
+    );
   } catch (error) {
     return NextResponse.json(
       {

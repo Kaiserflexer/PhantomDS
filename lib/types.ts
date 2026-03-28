@@ -21,8 +21,3 @@ export type TaskRecord = {
   createdAt: string;
   updatedAt: string;
 };
-
-export type PhantomStore = {
-  notes: NoteRecord[];
-  tasks: TaskRecord[];
-};

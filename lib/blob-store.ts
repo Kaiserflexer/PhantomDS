@@ -1,12 +1,8 @@
 import { get, put } from "@vercel/blob";
-import type { PhantomStore } from "@/lib/types";
+import type { NoteRecord, TaskRecord } from "@/lib/types";
 
-const STORE_PATH = "phantomds/data/store.json";
-
-const emptyStore: PhantomStore = {
-  notes: [],
-  tasks: []
-};
+const NOTES_PATH = "phantomds/data/notes.json";
+const TASKS_PATH = "phantomds/data/tasks.json";
 
 function requireBlobToken() {
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
@@ -14,16 +10,16 @@ function requireBlobToken() {
   }
 }
 
-export async function readStore(): Promise<PhantomStore> {
+async function readCollection<T>(path: string): Promise<T[]> {
   try {
     requireBlobToken();
 
-    const result = await get(STORE_PATH, {
+    const result = await get(path, {
       access: "private"
     });
 
     if (!result || result.statusCode !== 200) {
-      return emptyStore;
+      return [];
     }
 
     const text = await new Response(result.stream, {
@@ -31,25 +27,38 @@ export async function readStore(): Promise<PhantomStore> {
         "Cache-Control": "no-store"
       }
     }).text();
-    const data = JSON.parse(text) as Partial<PhantomStore>;
 
-    return {
-      notes: Array.isArray(data.notes) ? data.notes : [],
-      tasks: Array.isArray(data.tasks) ? data.tasks : []
-    };
+    const data = JSON.parse(text) as unknown;
+    return Array.isArray(data) ? (data as T[]) : [];
   } catch {
-    return emptyStore;
+    return [];
   }
 }
 
-export async function writeStore(data: PhantomStore) {
+async function writeCollection<T>(path: string, data: T[]) {
   requireBlobToken();
 
-  await put(STORE_PATH, JSON.stringify(data, null, 2), {
+  await put(path, JSON.stringify(data, null, 2), {
     access: "private",
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json",
     cacheControlMaxAge: 0
   });
+}
+
+export function readNotes() {
+  return readCollection<NoteRecord>(NOTES_PATH);
+}
+
+export function writeNotes(notes: NoteRecord[]) {
+  return writeCollection(NOTES_PATH, notes);
+}
+
+export function readTasks() {
+  return readCollection<TaskRecord>(TASKS_PATH);
+}
+
+export function writeTasks(tasks: TaskRecord[]) {
+  return writeCollection(TASKS_PATH, tasks);
 }
