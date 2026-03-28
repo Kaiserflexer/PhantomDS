@@ -46,7 +46,12 @@ function isTaskRecord(value: unknown): value is TaskRecord {
   );
 }
 
-async function readBlobJson(path: string): Promise<unknown> {
+type BlobJsonReadResult = {
+  found: boolean;
+  data: unknown;
+};
+
+async function readBlobJson(path: string): Promise<BlobJsonReadResult> {
   requireBlobToken();
 
   const result = await get(path, {
@@ -54,7 +59,7 @@ async function readBlobJson(path: string): Promise<unknown> {
   });
 
   if (!result || result.statusCode !== 200) {
-    return null;
+    return { found: false, data: null };
   }
 
   const text = await new Response(result.stream, {
@@ -63,15 +68,26 @@ async function readBlobJson(path: string): Promise<unknown> {
     }
   }).text();
 
-  return JSON.parse(text) as unknown;
+  return {
+    found: true,
+    data: JSON.parse(text) as unknown
+  };
 }
 
-async function readCollection<T>(path: string, guard: (value: unknown) => value is T): Promise<T[]> {
+async function readCollection<T>(path: string, guard: (value: unknown) => value is T): Promise<{ found: boolean; items: T[] }> {
   try {
-    const data = await readBlobJson(path);
-    return Array.isArray(data) ? data.filter(guard) : [];
+    const result = await readBlobJson(path);
+
+    if (!result.found) {
+      return { found: false, items: [] };
+    }
+
+    return {
+      found: true,
+      items: Array.isArray(result.data) ? result.data.filter(guard) : []
+    };
   } catch {
-    return [];
+    return { found: false, items: [] };
   }
 }
 
@@ -89,13 +105,13 @@ async function writeCollection<T>(path: string, data: T[]) {
 
 async function readLegacyStore(): Promise<{ notes: NoteRecord[]; tasks: TaskRecord[] }> {
   try {
-    const data = await readBlobJson(LEGACY_STORE_PATH);
+    const result = await readBlobJson(LEGACY_STORE_PATH);
 
-    if (!data || typeof data !== "object") {
+    if (!result.found || !result.data || typeof result.data !== "object") {
       return { notes: [], tasks: [] };
     }
 
-    const store = data as Record<string, unknown>;
+    const store = result.data as Record<string, unknown>;
 
     return {
       notes: Array.isArray(store.notes) ? store.notes.filter(isNoteRecord) : [],
@@ -107,10 +123,10 @@ async function readLegacyStore(): Promise<{ notes: NoteRecord[]; tasks: TaskReco
 }
 
 export async function readNotes() {
-  const notes = await readCollection<NoteRecord>(NOTES_PATH, isNoteRecord);
+  const result = await readCollection<NoteRecord>(NOTES_PATH, isNoteRecord);
 
-  if (notes.length > 0) {
-    return notes;
+  if (result.found) {
+    return result.items;
   }
 
   const legacy = await readLegacyStore();
@@ -122,10 +138,10 @@ export async function writeNotes(notes: NoteRecord[]) {
 }
 
 export async function readTasks() {
-  const tasks = await readCollection<TaskRecord>(TASKS_PATH, isTaskRecord);
+  const result = await readCollection<TaskRecord>(TASKS_PATH, isTaskRecord);
 
-  if (tasks.length > 0) {
-    return tasks;
+  if (result.found) {
+    return result.items;
   }
 
   const legacy = await readLegacyStore();
