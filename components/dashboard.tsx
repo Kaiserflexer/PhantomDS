@@ -10,6 +10,8 @@ type DashboardProps = {
   initialTasks: TaskRecord[];
 };
 
+type ViewMode = "overview" | "kanban" | "notes" | "today";
+
 type ToastState = {
   tone: "success" | "error";
   message: string;
@@ -44,6 +46,7 @@ function sortTasks(items: TaskRecord[]) {
 export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
   const [notes, setNotes] = useState(initialNotes);
   const [tasks, setTasks] = useState(initialTasks);
+  const [viewMode, setViewMode] = useState<ViewMode>("overview");
   const [isPending, startTransition] = useTransition();
   const [noteTitle, setNoteTitle] = useState("");
   const [notePinned, setNotePinned] = useState(false);
@@ -72,29 +75,51 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
+  const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const visibleTasks = useMemo(() => {
+    if (viewMode !== "today") {
+      return tasks;
+    }
+
+    return tasks.filter((task) => {
+      if (task.dueDate && task.dueDate.slice(0, 10) === todayDate) {
+        return true;
+      }
+
+      return task.status !== "done";
+    });
+  }, [tasks, todayDate, viewMode]);
+
   const taskColumns = useMemo(
     () => [
       {
         key: "todo" as const,
         title: "Backlog",
         accent: "todo",
-        items: sortTasks(tasks.filter((task) => task.status === "todo"))
+        items: sortTasks(visibleTasks.filter((task) => task.status === "todo"))
       },
       {
         key: "in_progress" as const,
         title: "In progress",
         accent: "in-progress",
-        items: sortTasks(tasks.filter((task) => task.status === "in_progress"))
+        items: sortTasks(visibleTasks.filter((task) => task.status === "in_progress"))
       },
       {
         key: "done" as const,
         title: "Done",
         accent: "done",
-        items: sortTasks(tasks.filter((task) => task.status === "done"))
+        items: sortTasks(visibleTasks.filter((task) => task.status === "done"))
       }
     ],
-    [tasks]
+    [visibleTasks]
   );
+
+  const visibleNotes = useMemo(() => sortNotes(notes), [notes]);
+  const isOverview = viewMode === "overview";
+  const isKanban = viewMode === "kanban";
+  const isNotes = viewMode === "notes";
+  const isToday = viewMode === "today";
 
   function showToast(tone: "success" | "error", message: string) {
     setToast({ tone, message });
@@ -244,149 +269,162 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
           </div>
 
           <div className="topbar-filters">
-            <button className="top-pill active" type="button">Overview</button>
-            <button className="top-pill" type="button">Kanban</button>
-            <button className="top-pill" type="button">Notes</button>
-            <button className="top-pill" type="button">Today</button>
+            <button className={`top-pill ${isOverview ? "active" : ""}`} type="button" onClick={() => setViewMode("overview")}>Overview</button>
+            <button className={`top-pill ${isKanban ? "active" : ""}`} type="button" onClick={() => setViewMode("kanban")}>Kanban</button>
+            <button className={`top-pill ${isNotes ? "active" : ""}`} type="button" onClick={() => setViewMode("notes")}>Notes</button>
+            <button className={`top-pill ${isToday ? "active" : ""}`} type="button" onClick={() => setViewMode("today")}>Today</button>
           </div>
         </header>
 
-        <section className="hero-panel">
-          <div>
-            <div className="eyebrow">Team space</div>
-            <h1 className="hero-title">Good evening. Your tasks, notes, and decisions are organized in one command layer.</h1>
-            <p className="hero-copy">
-              A cleaner productivity dashboard inspired by modern kanban and work OS interfaces, but still tuned for the
-              PhantomDS dark identity.
-            </p>
-          </div>
+        {!isKanban && !isNotes ? (
+          <section className="hero-panel">
+            <div>
+              <div className="eyebrow">Team space</div>
+              <h1 className="hero-title">
+                {isToday
+                  ? "Today's priorities, deadlines, and active work in one focused view."
+                  : "Good evening. Your tasks, notes, and decisions are organized in one command layer."}
+              </h1>
+              <p className="hero-copy">
+                {isToday
+                  ? "This mode trims the board down to tasks due today and unfinished work that still needs attention."
+                  : "A cleaner productivity dashboard inspired by modern kanban and work OS interfaces, but still tuned for the PhantomDS dark identity."}
+              </p>
+            </div>
 
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <div className="metric-value">{tasks.filter((task) => task.status !== "done").length}</div>
-              <div className="metric-label">Open tasks</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-value">{notes.length}</div>
-              <div className="metric-label">Saved notes</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-value">{notes.filter((note) => note.isPinned).length}</div>
-              <div className="metric-label">Pinned ideas</div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-value">{tasks.filter((task) => task.status === "done").length}</div>
-              <div className="metric-label">Completed</div>
-            </div>
-          </div>
-        </section>
-
-        <section className="workspace-grid">
-          <div className="main-column">
-            <div className="section-card">
-              <div className="section-heading-row">
-                <div>
-                  <div className="section-title">Task composer</div>
-                  <div className="section-subtitle">Create work items with the same visual rhythm as a kanban board.</div>
-                </div>
-                <div className="small-status">{isPending ? "Syncing" : "Live"}</div>
+            <div className="metrics-grid">
+              <div className="metric-card">
+                <div className="metric-value">{visibleTasks.filter((task) => task.status !== "done").length}</div>
+                <div className="metric-label">Open tasks</div>
               </div>
-
-              <form className="form-grid" onSubmit={handleCreateTask}>
-                <div className="field-grid two-up">
-                  <div className="field">
-                    <label htmlFor="task-title">Task title</label>
-                    <input id="task-title" value={taskTitle} placeholder="Prepare launch checklist" onChange={(event) => setTaskTitle(event.target.value)} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="task-due-date">Due date</label>
-                    <input id="task-due-date" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} />
-                  </div>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="task-description">Description</label>
-                  <textarea id="task-description" rows={3} value={taskDescription} placeholder="What needs to happen next?" onChange={(event) => setTaskDescription(event.target.value)} />
-                </div>
-
-                <div className="field-grid two-up">
-                  <div className="field">
-                    <label htmlFor="task-status">Stage</label>
-                    <select id="task-status" value={taskStatus} onChange={(event) => setTaskStatus(event.target.value as TaskStatus)}>
-                      <option value="todo">Backlog</option>
-                      <option value="in_progress">In progress</option>
-                      <option value="done">Done</option>
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="task-priority">Priority</label>
-                    <select id="task-priority" value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as TaskPriority)}>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
-                  </div>
-                </div>
-
-                <button className="primary-button" type="submit" disabled={isPending}>Add task</button>
-              </form>
-            </div>
-
-            <div className="section-card">
-              <div className="section-heading-row">
-                <div>
-                  <div className="section-title">Kanban board</div>
-                  <div className="section-subtitle">Compact task cards inspired by your references.</div>
-                </div>
-                <div className="board-toolbar">
-                  <span className="top-pill active">All tasks</span>
-                  <span className="top-pill">By status</span>
-                </div>
+              <div className="metric-card">
+                <div className="metric-value">{notes.length}</div>
+                <div className="metric-label">Saved notes</div>
               </div>
+              <div className="metric-card">
+                <div className="metric-value">{notes.filter((note) => note.isPinned).length}</div>
+                <div className="metric-label">Pinned ideas</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-value">{tasks.filter((task) => task.status === "done").length}</div>
+                <div className="metric-label">Completed</div>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
-              <div className="kanban-grid">
-                {taskColumns.map((column) => (
-                  <section key={column.key} className={`kanban-column ${column.accent}`}>
-                    <div className="kanban-header">
-                      <div className="kanban-title-wrap">
-                        <span className={`kanban-dot ${column.accent}`} />
-                        <strong>{column.title}</strong>
+        <section className={`workspace-grid ${isNotes ? "notes-mode-grid" : ""}`}>
+          {!isNotes ? (
+            <div className="main-column">
+              {isOverview || isToday ? (
+                <div className="section-card">
+                  <div className="section-heading-row">
+                    <div>
+                      <div className="section-title">Task composer</div>
+                      <div className="section-subtitle">Create work items with the same visual rhythm as a kanban board.</div>
+                    </div>
+                    <div className="small-status">{isPending ? "Syncing" : "Live"}</div>
+                  </div>
+
+                  <form className="form-grid" onSubmit={handleCreateTask}>
+                    <div className="field-grid two-up">
+                      <div className="field">
+                        <label htmlFor="task-title">Task title</label>
+                        <input id="task-title" value={taskTitle} placeholder="Prepare launch checklist" onChange={(event) => setTaskTitle(event.target.value)} />
                       </div>
-                      <span className="count-pill">{column.items.length}</span>
+                      <div className="field">
+                        <label htmlFor="task-due-date">Due date</label>
+                        <input id="task-due-date" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} />
+                      </div>
                     </div>
 
-                    <div className="kanban-stack">
-                      {column.items.length === 0 ? (
-                        <div className="empty-mini">No tasks here yet.</div>
-                      ) : (
-                        column.items.map((task) => (
-                          <article key={task.id} className="task-card-compact">
-                            <div className="task-card-top">
-                              <div>
-                                <div className="task-card-title">{task.title}</div>
-                                <div className="task-card-copy">{task.description || "No extra details yet."}</div>
+                    <div className="field">
+                      <label htmlFor="task-description">Description</label>
+                      <textarea id="task-description" rows={3} value={taskDescription} placeholder="What needs to happen next?" onChange={(event) => setTaskDescription(event.target.value)} />
+                    </div>
+
+                    <div className="field-grid two-up">
+                      <div className="field">
+                        <label htmlFor="task-status">Stage</label>
+                        <select id="task-status" value={taskStatus} onChange={(event) => setTaskStatus(event.target.value as TaskStatus)}>
+                          <option value="todo">Backlog</option>
+                          <option value="in_progress">In progress</option>
+                          <option value="done">Done</option>
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="task-priority">Priority</label>
+                        <select id="task-priority" value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as TaskPriority)}>
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <button className="primary-button" type="submit" disabled={isPending}>Add task</button>
+                  </form>
+                </div>
+              ) : null}
+
+              <div className="section-card">
+                <div className="section-heading-row">
+                  <div>
+                    <div className="section-title">{isToday ? "Today's board" : "Kanban board"}</div>
+                    <div className="section-subtitle">
+                      {isToday ? "Only today's deadlines and unfinished work." : "Compact task cards inspired by your references."}
+                    </div>
+                  </div>
+                  <div className="board-toolbar">
+                    <span className="top-pill active">{visibleTasks.length} tasks</span>
+                    <span className="top-pill">{isToday ? "Today focus" : "By status"}</span>
+                  </div>
+                </div>
+
+                <div className="kanban-grid">
+                  {taskColumns.map((column) => (
+                    <section key={column.key} className={`kanban-column ${column.accent}`}>
+                      <div className="kanban-header">
+                        <div className="kanban-title-wrap">
+                          <span className={`kanban-dot ${column.accent}`} />
+                          <strong>{column.title}</strong>
+                        </div>
+                        <span className="count-pill">{column.items.length}</span>
+                      </div>
+
+                      <div className="kanban-stack">
+                        {column.items.length === 0 ? (
+                          <div className="empty-mini">No tasks here yet.</div>
+                        ) : (
+                          column.items.map((task) => (
+                            <article key={task.id} className="task-card-compact">
+                              <div className="task-card-top">
+                                <div>
+                                  <div className="task-card-title">{task.title}</div>
+                                  <div className="task-card-copy">{task.description || "No extra details yet."}</div>
+                                </div>
+                                <button className="mini-delete" type="button" onClick={() => handleDeleteTask(task.id)}>
+                                  Delete
+                                </button>
                               </div>
-                              <button className="mini-delete" type="button" onClick={() => handleDeleteTask(task.id)}>
-                                Delete
-                              </button>
-                            </div>
 
-                            <div className="task-card-bottom">
-                              <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
-                              <span className={`status-chip ${task.status}`}>{taskStatusLabel(task.status)}</span>
-                              <span className="meta-chip">{formatDate(task.dueDate)}</span>
-                            </div>
-                          </article>
-                        ))
-                      )}
-                    </div>
-                  </section>
-                ))}
+                              <div className="task-card-bottom">
+                                <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
+                                <span className={`status-chip ${task.status}`}>{taskStatusLabel(task.status)}</span>
+                                <span className="meta-chip">{formatDate(task.dueDate)}</span>
+                              </div>
+                            </article>
+                          ))
+                        )}
+                      </div>
+                    </section>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          ) : null}
 
-          <aside className="side-column">
+          <aside className={`side-column ${isNotes ? "full-width-side" : ""}`}>
             <div className="section-card notes-composer-card">
               <div className="section-heading-row">
                 <div>
@@ -418,15 +456,17 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
               <div className="section-heading-row">
                 <div>
                   <div className="section-title">Notes archive</div>
-                  <div className="section-subtitle">A denser notes list inspired by workspace sidepanels.</div>
+                  <div className="section-subtitle">
+                    {isNotes ? "Focused notes mode with all saved entries." : "A denser notes list inspired by workspace sidepanels."}
+                  </div>
                 </div>
               </div>
 
               <div className="notes-stack">
-                {notes.length === 0 ? (
+                {visibleNotes.length === 0 ? (
                   <div className="empty-mini">Create your first PhantomDS note.</div>
                 ) : (
-                  notes.map((note) => (
+                  visibleNotes.map((note) => (
                     <article className="note-card-compact" key={note.id}>
                       <div className="task-card-top">
                         <div>

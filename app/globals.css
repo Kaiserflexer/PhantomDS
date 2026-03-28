@@ -192,6 +192,10 @@ textarea {
   margin-top: 22px;
 }
 
+.notes-mode-grid {
+  grid-template-columns: 1fr;
+}
+
 .main-column,
 .side-column,
 .form-grid,
@@ -200,6 +204,10 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.full-width-side {
+  max-width: 980px;
 }
 
 .section-card {
@@ -482,6 +490,10 @@ textarea {
 
   .metrics-grid {
     min-width: 0;
+  }
+
+  .full-width-side {
+    max-width: none;
   }
 }
 
