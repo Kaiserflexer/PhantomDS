@@ -62,6 +62,54 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PATCH(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id")?.trim();
+    const body = await request.json();
+
+    if (!id) {
+      return NextResponse.json({ error: "Task id is required." }, { status: 400 });
+    }
+
+    const status = allowedStatuses.has(body.status) ? body.status : null;
+
+    if (!status) {
+      return NextResponse.json({ error: "Valid status is required." }, { status: 400 });
+    }
+
+    const tasks = await readTasks();
+    const index = tasks.findIndex((task) => task.id === id);
+
+    if (index === -1) {
+      return NextResponse.json({ error: "Task not found." }, { status: 404 });
+    }
+
+    const nextTask: TaskRecord = {
+      ...tasks[index],
+      status,
+      updatedAt: nowIso()
+    };
+
+    const nextTasks = [...tasks];
+    nextTasks[index] = nextTask;
+    await writeTasks(nextTasks);
+
+    return NextResponse.json(nextTask, {
+      headers: {
+        "Cache-Control": "no-store"
+      }
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to update task status."
+      },
+      { status: 500 }
+    );
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -91,8 +139,8 @@ export async function DELETE(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to delete task."
-      },
+        error: error instanceof Error ? error.message : "Failed to delete task." }
+      ,
       { status: 500 }
     );
   }

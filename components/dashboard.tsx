@@ -232,6 +232,48 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
     });
   }
 
+  async function handleUpdateTaskStatus(id: string, status: TaskStatus) {
+    const previousTasks = tasks;
+    const optimisticTasks = tasks.map((task) =>
+      task.id === id
+        ? {
+            ...task,
+            status,
+            updatedAt: new Date().toISOString()
+          }
+        : task
+    );
+
+    setTasks(sortTasks(optimisticTasks));
+
+    startTransition(async () => {
+      try {
+        const response = await fetch(`/api/tasks?id=${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ status })
+        });
+
+        if (!response.ok) {
+          setTasks(previousTasks);
+          showToast("error", await readErrorMessage(response, "Failed to update task status."));
+          return;
+        }
+
+        const updatedTask = (await response.json()) as TaskRecord;
+        setTasks((current) =>
+          sortTasks(current.map((task) => (task.id === updatedTask.id ? updatedTask : task)))
+        );
+        showToast("success", "Task status updated.");
+      } catch {
+        setTasks(previousTasks);
+        showToast("error", "Network error while updating task status.");
+      }
+    });
+  }
+
   async function handleDeleteTask(id: string) {
     const previousTasks = tasks;
     setTasks((current) => current.filter((task) => task.id !== id));
@@ -410,7 +452,15 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
 
                               <div className="task-card-bottom">
                                 <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
-                                <span className={`status-chip ${task.status}`}>{taskStatusLabel(task.status)}</span>
+                                <select
+                                  className={`status-select ${task.status}`}
+                                  value={task.status}
+                                  onChange={(event) => handleUpdateTaskStatus(task.id, event.target.value as TaskStatus)}
+                                >
+                                  <option value="todo">To do</option>
+                                  <option value="in_progress">In progress</option>
+                                  <option value="done">Done</option>
+                                </select>
                                 <span className="meta-chip">{formatDate(task.dueDate)}</span>
                               </div>
                             </article>
