@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import type { NoteRecord, TaskPriority, TaskRecord, TaskStatus } from "@/lib/types";
 import { formatDate, summarize, taskStatusLabel } from "@/lib/utils";
@@ -25,6 +25,20 @@ async function readErrorMessage(response: Response, fallback: string) {
 
   const text = await response.text().catch(() => "");
   return text || fallback;
+}
+
+function sortNotes(items: NoteRecord[]) {
+  return [...items].sort((left, right) => {
+    if (left.isPinned !== right.isPinned) {
+      return Number(right.isPinned) - Number(left.isPinned);
+    }
+
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
+}
+
+function sortTasks(items: TaskRecord[]) {
+  return [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
@@ -58,23 +72,32 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
+  const taskColumns = useMemo(
+    () => [
+      {
+        key: "todo" as const,
+        title: "Backlog",
+        accent: "todo",
+        items: sortTasks(tasks.filter((task) => task.status === "todo"))
+      },
+      {
+        key: "in_progress" as const,
+        title: "In progress",
+        accent: "in-progress",
+        items: sortTasks(tasks.filter((task) => task.status === "in_progress"))
+      },
+      {
+        key: "done" as const,
+        title: "Done",
+        accent: "done",
+        items: sortTasks(tasks.filter((task) => task.status === "done"))
+      }
+    ],
+    [tasks]
+  );
+
   function showToast(tone: "success" | "error", message: string) {
     setToast({ tone, message });
-  }
-
-  async function refreshData() {
-    const [notesResponse, tasksResponse] = await Promise.all([
-      fetch("/api/notes", { cache: "no-store" }),
-      fetch("/api/tasks", { cache: "no-store" })
-    ]);
-
-    if (notesResponse.ok) {
-      setNotes(await notesResponse.json());
-    }
-
-    if (tasksResponse.ok) {
-      setTasks(await tasksResponse.json());
-    }
   }
 
   async function handleCreateNote(event: React.FormEvent<HTMLFormElement>) {
@@ -106,13 +129,7 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
         }
 
         const note = (await response.json()) as NoteRecord;
-        setNotes((current) => [note, ...current].sort((left, right) => {
-          if (left.isPinned !== right.isPinned) {
-            return Number(right.isPinned) - Number(left.isPinned);
-          }
-
-          return right.updatedAt.localeCompare(left.updatedAt);
-        }));
+        setNotes((current) => sortNotes([note, ...current]));
         setNoteTitle("");
         setNotePinned(false);
         setNoteContent("");
@@ -177,7 +194,7 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
         }
 
         const task = (await response.json()) as TaskRecord;
-        setTasks((current) => [task, ...current].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
+        setTasks((current) => sortTasks([task, ...current]));
         setTaskTitle("");
         setTaskDescription("");
         setTaskStatus("todo");
@@ -216,158 +233,94 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
 
   return (
     <>
-      <div className="page-shell">
-        <section className="hero">
-          <div className="hero-grid">
+      <div className="workspace-shell">
+        <header className="topbar">
+          <div className="brand-block">
+            <div className="brand-mark">P</div>
             <div>
-              <span className="badge">PhantomDS workspace</span>
-              <h1>Black note system with violet gradients and synced storage.</h1>
-              <p>
-                PhantomDS combines notes, tasks, and a built-in rich text editor in one interface that is ready for
-                Vercel deployment and private Blob-based sync.
-              </p>
+              <div className="eyebrow">PhantomDS</div>
+              <div className="brand-title">Operations board</div>
             </div>
-            <div className="hero-stats">
-              <div className="stat-card">
-                <div className="stat-label">Saved notes</div>
-                <div className="stat-value">{notes.length}</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Active tasks</div>
-                <div className="stat-value">{tasks.length}</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Pinned ideas</div>
-                <div className="stat-value">{notes.filter((note) => note.isPinned).length}</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Completed</div>
-                <div className="stat-value">{tasks.filter((task) => task.status === "done").length}</div>
-              </div>
+          </div>
+
+          <div className="topbar-filters">
+            <button className="top-pill active" type="button">Overview</button>
+            <button className="top-pill" type="button">Kanban</button>
+            <button className="top-pill" type="button">Notes</button>
+            <button className="top-pill" type="button">Today</button>
+          </div>
+        </header>
+
+        <section className="hero-panel">
+          <div>
+            <div className="eyebrow">Team space</div>
+            <h1 className="hero-title">Good evening. Your tasks, notes, and decisions are organized in one command layer.</h1>
+            <p className="hero-copy">
+              A cleaner productivity dashboard inspired by modern kanban and work OS interfaces, but still tuned for the
+              PhantomDS dark identity.
+            </p>
+          </div>
+
+          <div className="metrics-grid">
+            <div className="metric-card">
+              <div className="metric-value">{tasks.filter((task) => task.status !== "done").length}</div>
+              <div className="metric-label">Open tasks</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-value">{notes.length}</div>
+              <div className="metric-label">Saved notes</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-value">{notes.filter((note) => note.isPinned).length}</div>
+              <div className="metric-label">Pinned ideas</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-value">{tasks.filter((task) => task.status === "done").length}</div>
+              <div className="metric-label">Completed</div>
             </div>
           </div>
         </section>
 
-        <section className="dashboard-grid">
-          <div className="stack">
-            <div className="panel">
-              <div className="panel-header">
+        <section className="workspace-grid">
+          <div className="main-column">
+            <div className="section-card">
+              <div className="section-heading-row">
                 <div>
-                  <h2 className="panel-title">Create note</h2>
-                  <div className="panel-subtitle">Built-in editor with private storage sync.</div>
+                  <div className="section-title">Task composer</div>
+                  <div className="section-subtitle">Create work items with the same visual rhythm as a kanban board.</div>
                 </div>
-                <span className="pill">{isPending ? "Saving..." : "Private Blob"}</span>
-              </div>
-
-              <form className="form-grid" onSubmit={handleCreateNote}>
-                <div className="field">
-                  <label htmlFor="note-title">Title</label>
-                  <input
-                    id="note-title"
-                    value={noteTitle}
-                    placeholder="Optional title"
-                    onChange={(event) => setNoteTitle(event.target.value)}
-                  />
-                </div>
-
-                <div className="section-actions">
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    onClick={() => setNotePinned((value) => !value)}
-                    style={{
-                      borderColor: notePinned ? "rgba(187, 124, 255, 0.42)" : undefined,
-                      background: notePinned ? "rgba(157, 88, 255, 0.16)" : undefined
-                    }}
-                  >
-                    {notePinned ? "Pinned" : "Pin note"}
-                  </button>
-                </div>
-
-                <RichTextEditor value={noteContent} onChange={setNoteContent} />
-
-                <button className="button" type="submit" disabled={isPending}>Save note</button>
-              </form>
-            </div>
-
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2 className="panel-title">Notes archive</h2>
-                  <div className="panel-subtitle">Pinned records stay on top.</div>
-                </div>
-              </div>
-
-              <div className="stack">
-                {notes.length === 0 ? (
-                  <div className="empty-state">Create your first PhantomDS note.</div>
-                ) : (
-                  notes.map((note) => (
-                    <article className="card" key={note.id}>
-                      <div className="card-title">
-                        <div>
-                          <strong>{note.title}</strong>
-                        </div>
-                        <div className="section-actions">
-                          {note.isPinned ? <span className="pill">Pinned</span> : null}
-                          <button className="ghost-button" type="button" onClick={() => handleDeleteNote(note.id)}>
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                      <div className="muted">{note.summary || "No preview yet."}</div>
-                      <div className="note-meta">
-                        <span>Updated {formatDate(note.updatedAt)}</span>
-                      </div>
-                    </article>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="stack">
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2 className="panel-title">Task control</h2>
-                  <div className="panel-subtitle">Track priorities and deadlines.</div>
-                </div>
+                <div className="small-status">{isPending ? "Syncing" : "Live"}</div>
               </div>
 
               <form className="form-grid" onSubmit={handleCreateTask}>
-                <div className="field">
-                  <label htmlFor="task-title">Task title</label>
-                  <input id="task-title" value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} />
+                <div className="field-grid two-up">
+                  <div className="field">
+                    <label htmlFor="task-title">Task title</label>
+                    <input id="task-title" value={taskTitle} placeholder="Prepare launch checklist" onChange={(event) => setTaskTitle(event.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="task-due-date">Due date</label>
+                    <input id="task-due-date" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} />
+                  </div>
                 </div>
 
                 <div className="field">
                   <label htmlFor="task-description">Description</label>
-                  <textarea
-                    id="task-description"
-                    rows={4}
-                    value={taskDescription}
-                    onChange={(event) => setTaskDescription(event.target.value)}
-                  />
+                  <textarea id="task-description" rows={3} value={taskDescription} placeholder="What needs to happen next?" onChange={(event) => setTaskDescription(event.target.value)} />
                 </div>
 
-                <div className="split-fields">
+                <div className="field-grid two-up">
                   <div className="field">
-                    <label htmlFor="task-status">Status</label>
+                    <label htmlFor="task-status">Stage</label>
                     <select id="task-status" value={taskStatus} onChange={(event) => setTaskStatus(event.target.value as TaskStatus)}>
-                      <option value="todo">To do</option>
+                      <option value="todo">Backlog</option>
                       <option value="in_progress">In progress</option>
                       <option value="done">Done</option>
                     </select>
                   </div>
-
                   <div className="field">
                     <label htmlFor="task-priority">Priority</label>
-                    <select
-                      id="task-priority"
-                      value={taskPriority}
-                      onChange={(event) => setTaskPriority(event.target.value as TaskPriority)}
-                    >
+                    <select id="task-priority" value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as TaskPriority)}>
                       <option value="low">Low</option>
                       <option value="medium">Medium</option>
                       <option value="high">High</option>
@@ -375,49 +328,125 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
                   </div>
                 </div>
 
-                <div className="field">
-                  <label htmlFor="task-due-date">Due date</label>
-                  <input id="task-due-date" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} />
-                </div>
-
-                <button className="button" type="submit" disabled={isPending}>Add task</button>
+                <button className="primary-button" type="submit" disabled={isPending}>Add task</button>
               </form>
             </div>
 
-            <div className="panel">
-              <div className="panel-header">
+            <div className="section-card">
+              <div className="section-heading-row">
                 <div>
-                  <h2 className="panel-title">Tasks board</h2>
-                  <div className="panel-subtitle">A compact overview of current work.</div>
+                  <div className="section-title">Kanban board</div>
+                  <div className="section-subtitle">Compact task cards inspired by your references.</div>
+                </div>
+                <div className="board-toolbar">
+                  <span className="top-pill active">All tasks</span>
+                  <span className="top-pill">By status</span>
                 </div>
               </div>
 
-              <div className="stack">
-                {tasks.length === 0 ? (
-                  <div className="empty-state">No tasks yet.</div>
-                ) : (
-                  tasks.map((task) => (
-                    <article className="card" key={task.id}>
-                      <div className="card-title">
-                        <strong>{task.title}</strong>
-                        <div className="section-actions">
-                          <span className={`pill ${task.status}`}>{taskStatusLabel(task.status)}</span>
-                          <button className="ghost-button" type="button" onClick={() => handleDeleteTask(task.id)}>
-                            Delete
-                          </button>
-                        </div>
+              <div className="kanban-grid">
+                {taskColumns.map((column) => (
+                  <section key={column.key} className={`kanban-column ${column.accent}`}>
+                    <div className="kanban-header">
+                      <div className="kanban-title-wrap">
+                        <span className={`kanban-dot ${column.accent}`} />
+                        <strong>{column.title}</strong>
                       </div>
-                      <div className="muted">{task.description || "No extra details provided."}</div>
-                      <div className="task-meta">
-                        <span>Priority {task.priority}</span>
-                        <span>{formatDate(task.dueDate)}</span>
+                      <span className="count-pill">{column.items.length}</span>
+                    </div>
+
+                    <div className="kanban-stack">
+                      {column.items.length === 0 ? (
+                        <div className="empty-mini">No tasks here yet.</div>
+                      ) : (
+                        column.items.map((task) => (
+                          <article key={task.id} className="task-card-compact">
+                            <div className="task-card-top">
+                              <div>
+                                <div className="task-card-title">{task.title}</div>
+                                <div className="task-card-copy">{task.description || "No extra details yet."}</div>
+                              </div>
+                              <button className="mini-delete" type="button" onClick={() => handleDeleteTask(task.id)}>
+                                Delete
+                              </button>
+                            </div>
+
+                            <div className="task-card-bottom">
+                              <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
+                              <span className={`status-chip ${task.status}`}>{taskStatusLabel(task.status)}</span>
+                              <span className="meta-chip">{formatDate(task.dueDate)}</span>
+                            </div>
+                          </article>
+                        ))
+                      )}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <aside className="side-column">
+            <div className="section-card notes-composer-card">
+              <div className="section-heading-row">
+                <div>
+                  <div className="section-title">Notes lab</div>
+                  <div className="section-subtitle">Capture quick ideas, meeting notes, and product thinking.</div>
+                </div>
+                <button
+                  className={`top-pill ${notePinned ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setNotePinned((value) => !value)}
+                >
+                  {notePinned ? "Pinned" : "Pin note"}
+                </button>
+              </div>
+
+              <form className="form-grid" onSubmit={handleCreateNote}>
+                <div className="field">
+                  <label htmlFor="note-title">Title</label>
+                  <input id="note-title" value={noteTitle} placeholder="Optional title" onChange={(event) => setNoteTitle(event.target.value)} />
+                </div>
+
+                <RichTextEditor value={noteContent} onChange={setNoteContent} />
+
+                <button className="primary-button" type="submit" disabled={isPending}>Save note</button>
+              </form>
+            </div>
+
+            <div className="section-card">
+              <div className="section-heading-row">
+                <div>
+                  <div className="section-title">Notes archive</div>
+                  <div className="section-subtitle">A denser notes list inspired by workspace sidepanels.</div>
+                </div>
+              </div>
+
+              <div className="notes-stack">
+                {notes.length === 0 ? (
+                  <div className="empty-mini">Create your first PhantomDS note.</div>
+                ) : (
+                  notes.map((note) => (
+                    <article className="note-card-compact" key={note.id}>
+                      <div className="task-card-top">
+                        <div>
+                          <div className="task-card-title">{note.title}</div>
+                          <div className="task-card-copy">{note.summary || "No preview yet."}</div>
+                        </div>
+                        <button className="mini-delete" type="button" onClick={() => handleDeleteNote(note.id)}>
+                          Delete
+                        </button>
+                      </div>
+                      <div className="task-card-bottom">
+                        {note.isPinned ? <span className="priority-chip high">Pinned</span> : null}
+                        <span className="meta-chip">Updated {formatDate(note.updatedAt)}</span>
                       </div>
                     </article>
                   ))
                 )}
               </div>
             </div>
-          </div>
+          </aside>
         </section>
       </div>
 
