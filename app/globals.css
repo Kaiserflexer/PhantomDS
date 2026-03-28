@@ -555,3 +555,13 @@ textarea {
 .status-select.done {
   color: #86efac;
 }
+
+.list-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.list-row-task {
+  background: rgba(255, 255, 255, 0.035);
+}

@@ -11,6 +11,7 @@ type DashboardProps = {
 };
 
 type ViewMode = "overview" | "kanban" | "notes" | "today";
+type TaskLayout = "status" | "updated";
 
 type ToastState = {
   tone: "success" | "error";
@@ -47,6 +48,7 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
   const [notes, setNotes] = useState(initialNotes);
   const [tasks, setTasks] = useState(initialTasks);
   const [viewMode, setViewMode] = useState<ViewMode>("overview");
+  const [taskLayout, setTaskLayout] = useState<TaskLayout>("status");
   const [isPending, startTransition] = useTransition();
   const [noteTitle, setNoteTitle] = useState("");
   const [notePinned, setNotePinned] = useState(false);
@@ -90,6 +92,8 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
       return task.status !== "done";
     });
   }, [tasks, todayDate, viewMode]);
+
+  const sortedVisibleTasks = useMemo(() => sortTasks(visibleTasks), [visibleTasks]);
 
   const taskColumns = useMemo(
     () => [
@@ -263,9 +267,7 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
         }
 
         const updatedTask = (await response.json()) as TaskRecord;
-        setTasks((current) =>
-          sortTasks(current.map((task) => (task.id === updatedTask.id ? updatedTask : task)))
-        );
+        setTasks((current) => sortTasks(current.map((task) => (task.id === updatedTask.id ? updatedTask : task))));
         showToast("success", "Task status updated.");
       } catch {
         setTasks(previousTasks);
@@ -418,58 +420,94 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
                     </div>
                   </div>
                   <div className="board-toolbar">
-                    <span className="top-pill active">{visibleTasks.length} tasks</span>
-                    <span className="top-pill">{isToday ? "Today focus" : "By status"}</span>
+                    <button className={`top-pill ${taskLayout === "updated" ? "active" : ""}`} type="button" onClick={() => setTaskLayout("updated")}>{visibleTasks.length} tasks</button>
+                    <button className={`top-pill ${taskLayout === "status" ? "active" : ""}`} type="button" onClick={() => setTaskLayout("status")}>{isToday ? "Today focus" : "By status"}</button>
                   </div>
                 </div>
 
-                <div className="kanban-grid">
-                  {taskColumns.map((column) => (
-                    <section key={column.key} className={`kanban-column ${column.accent}`}>
-                      <div className="kanban-header">
-                        <div className="kanban-title-wrap">
-                          <span className={`kanban-dot ${column.accent}`} />
-                          <strong>{column.title}</strong>
+                {taskLayout === "status" ? (
+                  <div className="kanban-grid">
+                    {taskColumns.map((column) => (
+                      <section key={column.key} className={`kanban-column ${column.accent}`}>
+                        <div className="kanban-header">
+                          <div className="kanban-title-wrap">
+                            <span className={`kanban-dot ${column.accent}`} />
+                            <strong>{column.title}</strong>
+                          </div>
+                          <span className="count-pill">{column.items.length}</span>
                         </div>
-                        <span className="count-pill">{column.items.length}</span>
-                      </div>
 
-                      <div className="kanban-stack">
-                        {column.items.length === 0 ? (
-                          <div className="empty-mini">No tasks here yet.</div>
-                        ) : (
-                          column.items.map((task) => (
-                            <article key={task.id} className="task-card-compact">
-                              <div className="task-card-top">
-                                <div>
-                                  <div className="task-card-title">{task.title}</div>
-                                  <div className="task-card-copy">{task.description || "No extra details yet."}</div>
+                        <div className="kanban-stack">
+                          {column.items.length === 0 ? (
+                            <div className="empty-mini">No tasks here yet.</div>
+                          ) : (
+                            column.items.map((task) => (
+                              <article key={task.id} className="task-card-compact">
+                                <div className="task-card-top">
+                                  <div>
+                                    <div className="task-card-title">{task.title}</div>
+                                    <div className="task-card-copy">{task.description || "No extra details yet."}</div>
+                                  </div>
+                                  <button className="mini-delete" type="button" onClick={() => handleDeleteTask(task.id)}>
+                                    Delete
+                                  </button>
                                 </div>
-                                <button className="mini-delete" type="button" onClick={() => handleDeleteTask(task.id)}>
-                                  Delete
-                                </button>
-                              </div>
 
-                              <div className="task-card-bottom">
-                                <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
-                                <select
-                                  className={`status-select ${task.status}`}
-                                  value={task.status}
-                                  onChange={(event) => handleUpdateTaskStatus(task.id, event.target.value as TaskStatus)}
-                                >
-                                  <option value="todo">To do</option>
-                                  <option value="in_progress">In progress</option>
-                                  <option value="done">Done</option>
-                                </select>
-                                <span className="meta-chip">{formatDate(task.dueDate)}</span>
-                              </div>
-                            </article>
-                          ))
-                        )}
-                      </div>
-                    </section>
-                  ))}
-                </div>
+                                <div className="task-card-bottom">
+                                  <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
+                                  <select
+                                    className={`status-select ${task.status}`}
+                                    value={task.status}
+                                    onChange={(event) => handleUpdateTaskStatus(task.id, event.target.value as TaskStatus)}
+                                  >
+                                    <option value="todo">To do</option>
+                                    <option value="in_progress">In progress</option>
+                                    <option value="done">Done</option>
+                                  </select>
+                                  <span className="meta-chip">{formatDate(task.dueDate)}</span>
+                                </div>
+                              </article>
+                            ))
+                          )}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="list-stack">
+                    {sortedVisibleTasks.length === 0 ? (
+                      <div className="empty-mini">No tasks here yet.</div>
+                    ) : (
+                      sortedVisibleTasks.map((task) => (
+                        <article key={task.id} className="task-card-compact list-row-task">
+                          <div className="task-card-top">
+                            <div>
+                              <div className="task-card-title">{task.title}</div>
+                              <div className="task-card-copy">{task.description || "No extra details yet."}</div>
+                            </div>
+                            <button className="mini-delete" type="button" onClick={() => handleDeleteTask(task.id)}>
+                              Delete
+                            </button>
+                          </div>
+
+                          <div className="task-card-bottom">
+                            <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
+                            <select
+                              className={`status-select ${task.status}`}
+                              value={task.status}
+                              onChange={(event) => handleUpdateTaskStatus(task.id, event.target.value as TaskStatus)}
+                            >
+                              <option value="todo">To do</option>
+                              <option value="in_progress">In progress</option>
+                              <option value="done">Done</option>
+                            </select>
+                            <span className="meta-chip">{formatDate(task.dueDate)}</span>
+                          </div>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ) : null}
