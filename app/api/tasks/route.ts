@@ -72,12 +72,6 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Task id is required." }, { status: 400 });
     }
 
-    const status = allowedStatuses.has(body.status) ? body.status : null;
-
-    if (!status) {
-      return NextResponse.json({ error: "Valid status is required." }, { status: 400 });
-    }
-
     const tasks = await readTasks();
     const index = tasks.findIndex((task) => task.id === id);
 
@@ -85,9 +79,24 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Task not found." }, { status: 404 });
     }
 
+    const currentTask = tasks[index];
+    const nextTitle = typeof body.title === "string" ? body.title.trim() : currentTask.title;
+    const nextDescription = typeof body.description === "string" ? body.description.trim() : currentTask.description;
+    const nextStatus = allowedStatuses.has(body.status) ? body.status : currentTask.status;
+    const nextPriority = allowedPriorities.has(body.priority) ? body.priority : currentTask.priority;
+    const nextDueDate = body.dueDate === null ? null : typeof body.dueDate === "string" ? body.dueDate || null : currentTask.dueDate;
+
+    if (!nextTitle) {
+      return NextResponse.json({ error: "Title is required." }, { status: 400 });
+    }
+
     const nextTask: TaskRecord = {
-      ...tasks[index],
-      status,
+      ...currentTask,
+      title: nextTitle,
+      description: nextDescription,
+      status: nextStatus,
+      priority: nextPriority,
+      dueDate: nextDueDate,
       updatedAt: nowIso()
     };
 
@@ -103,7 +112,7 @@ export async function PATCH(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to update task status."
+        error: error instanceof Error ? error.message : "Failed to update task."
       },
       { status: 500 }
     );
@@ -139,8 +148,8 @@ export async function DELETE(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to delete task." }
-      ,
+        error: error instanceof Error ? error.message : "Failed to delete task."
+      },
       { status: 500 }
     );
   }

@@ -3,20 +3,28 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import type { NoteRecord, TaskPriority, TaskRecord, TaskStatus } from "@/lib/types";
-import { formatDate, summarize, taskStatusLabel } from "@/lib/utils";
+import { formatDate, summarize } from "@/lib/utils";
 
 type DashboardProps = {
   initialNotes: NoteRecord[];
   initialTasks: TaskRecord[];
 };
 
-type ViewMode = "overview" | "kanban" | "notes" | "today";
-type TaskLayout = "status" | "updated";
+type WorkspaceTab = "kanban" | "notes";
+type ToastState = { tone: "success" | "error"; message: string } | null;
+type ColumnDrafts = Record<TaskStatus, string>;
 
-type ToastState = {
-  tone: "success" | "error";
-  message: string;
-} | null;
+type ColumnConfig = {
+  key: TaskStatus;
+  title: string;
+  accent: string;
+};
+
+const columns: ColumnConfig[] = [
+  { key: "todo", title: "Backlog", accent: "todo" },
+  { key: "in_progress", title: "In Progress", accent: "progress" },
+  { key: "done", title: "Done", accent: "done" }
+];
 
 async function readErrorMessage(response: Response, fallback: string) {
   const contentType = response.headers.get("content-type") ?? "";
@@ -41,92 +49,184 @@ function sortNotes(items: NoteRecord[]) {
 }
 
 function sortTasks(items: TaskRecord[]) {
-  return [...items].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  const statusRank: Record<TaskStatus, number> = {
+    todo: 0,
+    in_progress: 1,
+    done: 2
+  };
+
+  return [...items].sort((left, right) => {
+    if (statusRank[left.status] !== statusRank[right.status]) {
+      return statusRank[left.status] - statusRank[right.status];
+    }
+
+    return right.updatedAt.localeCompare(left.updatedAt);
+  });
+}
+
+function priorityLabel(priority: TaskPriority) {
+  if (priority === "high") return "High";
+  if (priority === "low") return "Low";
+  return "Medium";
+}
+
+function statusLabel(status: TaskStatus) {
+  if (status === "in_progress") return "In progress";
+  if (status === "done") return "Done";
+  return "Backlog";
 }
 
 export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
-  const [notes, setNotes] = useState(initialNotes);
   const [tasks, setTasks] = useState(initialTasks);
-  const [viewMode, setViewMode] = useState<ViewMode>("overview");
-  const [taskLayout, setTaskLayout] = useState<TaskLayout>("status");
-  const [isPending, startTransition] = useTransition();
+  const [notes, setNotes] = useState(initialNotes);
+  const [tab, setTab] = useState<WorkspaceTab>("kanban");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTasks[0]?.id ?? null);
+  const [columnDrafts, setColumnDrafts] = useState<ColumnDrafts>({ todo: "", in_progress: "", done: "" });
   const [noteTitle, setNoteTitle] = useState("");
   const [notePinned, setNotePinned] = useState(false);
   const [noteContent, setNoteContent] = useState("");
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
-  const [taskStatus, setTaskStatus] = useState<TaskStatus>("todo");
-  const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
-  const [taskDueDate, setTaskDueDate] = useState("");
   const [toast, setToast] = useState<ToastState>(null);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    setNotes(initialNotes);
     setTasks(initialTasks);
+    setNotes(initialNotes);
+    setSelectedTaskId((current) => current ?? initialTasks[0]?.id ?? null);
   }, [initialNotes, initialTasks]);
 
   useEffect(() => {
-    if (!toast) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setToast(null);
-    }, 2600);
-
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
-
-  const visibleTasks = useMemo(() => {
-    if (viewMode !== "today") {
-      return tasks;
-    }
-
-    return tasks.filter((task) => {
-      if (task.dueDate && task.dueDate.slice(0, 10) === todayDate) {
-        return true;
-      }
-
-      return task.status !== "done";
-    });
-  }, [tasks, todayDate, viewMode]);
-
-  const sortedVisibleTasks = useMemo(() => sortTasks(visibleTasks), [visibleTasks]);
-
-  const taskColumns = useMemo(
-    () => [
-      {
-        key: "todo" as const,
-        title: "Backlog",
-        accent: "todo",
-        items: sortTasks(visibleTasks.filter((task) => task.status === "todo"))
-      },
-      {
-        key: "in_progress" as const,
-        title: "In progress",
-        accent: "in-progress",
-        items: sortTasks(visibleTasks.filter((task) => task.status === "in_progress"))
-      },
-      {
-        key: "done" as const,
-        title: "Done",
-        accent: "done",
-        items: sortTasks(visibleTasks.filter((task) => task.status === "done"))
-      }
-    ],
-    [visibleTasks]
+  const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
+  const sortedNotes = useMemo(() => sortNotes(notes), [notes]);
+  const selectedTask = useMemo(
+    () => sortedTasks.find((task) => task.id === selectedTaskId) ?? null,
+    [selectedTaskId, sortedTasks]
   );
-
-  const visibleNotes = useMemo(() => sortNotes(notes), [notes]);
-  const isOverview = viewMode === "overview";
-  const isKanban = viewMode === "kanban";
-  const isNotes = viewMode === "notes";
-  const isToday = viewMode === "today";
 
   function showToast(tone: "success" | "error", message: string) {
     setToast({ tone, message });
+  }
+
+  function applyTaskUpdate(updatedTask: TaskRecord) {
+    setTasks((current) => sortTasks(current.map((task) => (task.id === updatedTask.id ? updatedTask : task))));
+    setSelectedTaskId(updatedTask.id);
+  }
+
+  async function saveTaskPatch(id: string, patch: Partial<TaskRecord>, fallbackMessage: string) {
+    const previousTasks = tasks;
+    const previousSelected = selectedTask;
+
+    const optimistic = sortTasks(
+      tasks.map((task) =>
+        task.id === id
+          ? {
+              ...task,
+              ...patch,
+              updatedAt: new Date().toISOString()
+            }
+          : task
+      )
+    );
+
+    setTasks(optimistic);
+
+    startTransition(async () => {
+      try {
+        const response = await fetch(`/api/tasks?id=${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(patch)
+        });
+
+        if (!response.ok) {
+          setTasks(previousTasks);
+          if (previousSelected) setSelectedTaskId(previousSelected.id);
+          showToast("error", await readErrorMessage(response, fallbackMessage));
+          return;
+        }
+
+        const updatedTask = (await response.json()) as TaskRecord;
+        applyTaskUpdate(updatedTask);
+      } catch {
+        setTasks(previousTasks);
+        if (previousSelected) setSelectedTaskId(previousSelected.id);
+        showToast("error", fallbackMessage);
+      }
+    });
+  }
+
+  async function handleInlineCreate(status: TaskStatus) {
+    const title = columnDrafts[status].trim();
+    if (!title) return;
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/tasks", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            title,
+            description: "",
+            status,
+            priority: "medium",
+            dueDate: null
+          })
+        });
+
+        if (!response.ok) {
+          showToast("error", await readErrorMessage(response, "Failed to create task."));
+          return;
+        }
+
+        const task = (await response.json()) as TaskRecord;
+        setTasks((current) => sortTasks([task, ...current]));
+        setSelectedTaskId(task.id);
+        setColumnDrafts((current) => ({ ...current, [status]: "" }));
+        showToast("success", "Task created.");
+      } catch {
+        showToast("error", "Network error while creating task.");
+      }
+    });
+  }
+
+
+  async function handleUpdateTaskStatus(id: string, status: TaskStatus) {
+    await saveTaskPatch(id, { status }, "Failed to update task status.");
+  }
+  async function handleDeleteTask(id: string) {
+    const previousTasks = tasks;
+    const fallbackSelection = sortedTasks.find((task) => task.id !== id)?.id ?? null;
+    setTasks((current) => current.filter((task) => task.id !== id));
+    setSelectedTaskId((current) => (current === id ? fallbackSelection : current));
+
+    startTransition(async () => {
+      try {
+        const response = await fetch(`/api/tasks?id=${encodeURIComponent(id)}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          setTasks(previousTasks);
+          showToast("error", await readErrorMessage(response, "Failed to delete task."));
+          return;
+        }
+
+        showToast("success", "Task deleted.");
+      } catch {
+        setTasks(previousTasks);
+        showToast("error", "Network error while deleting task.");
+      }
+    });
   }
 
   async function handleCreateNote(event: React.FormEvent<HTMLFormElement>) {
@@ -193,396 +293,253 @@ export function Dashboard({ initialNotes, initialTasks }: DashboardProps) {
     });
   }
 
-  async function handleCreateTask(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!taskTitle.trim()) {
-      showToast("error", "Enter a task title first.");
-      return;
-    }
-
-    startTransition(async () => {
-      try {
-        const response = await fetch("/api/tasks", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            title: taskTitle,
-            description: taskDescription,
-            status: taskStatus,
-            priority: taskPriority,
-            dueDate: taskDueDate || null
-          })
-        });
-
-        if (!response.ok) {
-          showToast("error", await readErrorMessage(response, "Failed to save task."));
-          return;
-        }
-
-        const task = (await response.json()) as TaskRecord;
-        setTasks((current) => sortTasks([task, ...current]));
-        setTaskTitle("");
-        setTaskDescription("");
-        setTaskStatus("todo");
-        setTaskPriority("medium");
-        setTaskDueDate("");
-        showToast("success", "Task saved.");
-      } catch {
-        showToast("error", "Network error while saving task.");
-      }
-    });
-  }
-
-  async function handleUpdateTaskStatus(id: string, status: TaskStatus) {
-    const previousTasks = tasks;
-    const optimisticTasks = tasks.map((task) =>
-      task.id === id
-        ? {
-            ...task,
-            status,
-            updatedAt: new Date().toISOString()
-          }
-        : task
-    );
-
-    setTasks(sortTasks(optimisticTasks));
-
-    startTransition(async () => {
-      try {
-        const response = await fetch(`/api/tasks?id=${encodeURIComponent(id)}`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ status })
-        });
-
-        if (!response.ok) {
-          setTasks(previousTasks);
-          showToast("error", await readErrorMessage(response, "Failed to update task status."));
-          return;
-        }
-
-        const updatedTask = (await response.json()) as TaskRecord;
-        setTasks((current) => sortTasks(current.map((task) => (task.id === updatedTask.id ? updatedTask : task))));
-        showToast("success", "Task status updated.");
-      } catch {
-        setTasks(previousTasks);
-        showToast("error", "Network error while updating task status.");
-      }
-    });
-  }
-
-  async function handleDeleteTask(id: string) {
-    const previousTasks = tasks;
-    setTasks((current) => current.filter((task) => task.id !== id));
-
-    startTransition(async () => {
-      try {
-        const response = await fetch(`/api/tasks?id=${encodeURIComponent(id)}`, {
-          method: "DELETE"
-        });
-
-        if (!response.ok) {
-          setTasks(previousTasks);
-          showToast("error", await readErrorMessage(response, "Failed to delete task."));
-          return;
-        }
-
-        showToast("success", "Task deleted.");
-      } catch {
-        setTasks(previousTasks);
-        showToast("error", "Network error while deleting task.");
-      }
-    });
-  }
-
   return (
     <>
-      <div className="workspace-shell">
-        <header className="topbar">
-          <div className="brand-block">
-            <div className="brand-mark">P</div>
-            <div>
-              <div className="eyebrow">PhantomDS</div>
-              <div className="brand-title">Operations board</div>
-            </div>
+      <div className="linear-shell">
+        <aside className={`linear-sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
+          <div className="sidebar-top">
+            <button className="logo-chip" type="button" onClick={() => setSidebarCollapsed((value) => !value)}>
+              P
+            </button>
+            {!sidebarCollapsed ? <div className="sidebar-brand">PhantomDS</div> : null}
           </div>
 
-          <div className="topbar-filters">
-            <button className={`top-pill ${isOverview ? "active" : ""}`} type="button" onClick={() => setViewMode("overview")}>Overview</button>
-            <button className={`top-pill ${isKanban ? "active" : ""}`} type="button" onClick={() => setViewMode("kanban")}>Kanban</button>
-            <button className={`top-pill ${isNotes ? "active" : ""}`} type="button" onClick={() => setViewMode("notes")}>Notes</button>
-            <button className={`top-pill ${isToday ? "active" : ""}`} type="button" onClick={() => setViewMode("today")}>Today</button>
-          </div>
-        </header>
+          <nav className="sidebar-nav">
+            <button className={`sidebar-link ${tab === "kanban" ? "active" : ""}`} type="button" onClick={() => setTab("kanban")}>
+              <span className="sidebar-icon">#</span>
+              {!sidebarCollapsed ? <span>Kanban</span> : null}
+            </button>
+            <button className={`sidebar-link ${tab === "notes" ? "active" : ""}`} type="button" onClick={() => setTab("notes")}>
+              <span className="sidebar-icon">N</span>
+              {!sidebarCollapsed ? <span>Notes</span> : null}
+            </button>
+          </nav>
 
-        {!isKanban && !isNotes ? (
-          <section className="hero-panel">
-            <div>
-              <div className="eyebrow">Team space</div>
-              <h1 className="hero-title">
-                {isToday
-                  ? "Today's priorities, deadlines, and active work in one focused view."
-                  : "Good evening. Your tasks, notes, and decisions are organized in one command layer."}
-              </h1>
-              <p className="hero-copy">
-                {isToday
-                  ? "This mode trims the board down to tasks due today and unfinished work that still needs attention."
-                  : "A cleaner productivity dashboard inspired by modern kanban and work OS interfaces, but still tuned for the PhantomDS dark identity."}
-              </p>
+          {!sidebarCollapsed ? (
+            <div className="sidebar-footer">
+              <div className="sidebar-stat">{sortedTasks.length} tasks</div>
+              <div className="sidebar-stat">{sortedNotes.length} notes</div>
             </div>
+          ) : null}
+        </aside>
 
-            <div className="metrics-grid">
-              <div className="metric-card">
-                <div className="metric-value">{visibleTasks.filter((task) => task.status !== "done").length}</div>
-                <div className="metric-label">Open tasks</div>
-              </div>
-              <div className="metric-card">
-                <div className="metric-value">{notes.length}</div>
-                <div className="metric-label">Saved notes</div>
-              </div>
-              <div className="metric-card">
-                <div className="metric-value">{notes.filter((note) => note.isPinned).length}</div>
-                <div className="metric-label">Pinned ideas</div>
-              </div>
-              <div className="metric-card">
-                <div className="metric-value">{tasks.filter((task) => task.status === "done").length}</div>
-                <div className="metric-label">Completed</div>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        <section className={`workspace-grid ${isNotes ? "notes-mode-grid" : ""}`}>
-          {!isNotes ? (
-            <div className="main-column">
-              {isOverview || isToday ? (
-                <div className="section-card">
-                  <div className="section-heading-row">
-                    <div>
-                      <div className="section-title">Task composer</div>
-                      <div className="section-subtitle">Create work items with the same visual rhythm as a kanban board.</div>
-                    </div>
-                    <div className="small-status">{isPending ? "Syncing" : "Live"}</div>
-                  </div>
-
-                  <form className="form-grid" onSubmit={handleCreateTask}>
-                    <div className="field-grid two-up">
-                      <div className="field">
-                        <label htmlFor="task-title">Task title</label>
-                        <input id="task-title" value={taskTitle} placeholder="Prepare launch checklist" onChange={(event) => setTaskTitle(event.target.value)} />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="task-due-date">Due date</label>
-                        <input id="task-due-date" type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} />
-                      </div>
-                    </div>
-
-                    <div className="field">
-                      <label htmlFor="task-description">Description</label>
-                      <textarea id="task-description" rows={3} value={taskDescription} placeholder="What needs to happen next?" onChange={(event) => setTaskDescription(event.target.value)} />
-                    </div>
-
-                    <div className="field-grid two-up">
-                      <div className="field">
-                        <label htmlFor="task-status">Stage</label>
-                        <select id="task-status" value={taskStatus} onChange={(event) => setTaskStatus(event.target.value as TaskStatus)}>
-                          <option value="todo">Backlog</option>
-                          <option value="in_progress">In progress</option>
-                          <option value="done">Done</option>
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label htmlFor="task-priority">Priority</label>
-                        <select id="task-priority" value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as TaskPriority)}>
-                          <option value="low">Low</option>
-                          <option value="medium">Medium</option>
-                          <option value="high">High</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <button className="primary-button" type="submit" disabled={isPending}>Add task</button>
-                  </form>
+        <main className="workspace-main">
+          {tab === "kanban" ? (
+            <>
+              <div className="workspace-toolbar">
+                <div>
+                  <h1 className="workspace-title">Kanban</h1>
+                  <div className="workspace-subtitle">Minimal task flow with inline creation and fast edits.</div>
                 </div>
-              ) : null}
+              </div>
 
-              <div className="section-card">
-                <div className="section-heading-row">
-                  <div>
-                    <div className="section-title">{isToday ? "Today's board" : "Kanban board"}</div>
-                    <div className="section-subtitle">
-                      {isToday ? "Only today's deadlines and unfinished work." : "Compact task cards inspired by your references."}
-                    </div>
-                  </div>
-                  <div className="board-toolbar">
-                    <button className={`top-pill ${taskLayout === "updated" ? "active" : ""}`} type="button" onClick={() => setTaskLayout("updated")}>{visibleTasks.length} tasks</button>
-                    <button className={`top-pill ${taskLayout === "status" ? "active" : ""}`} type="button" onClick={() => setTaskLayout("status")}>{isToday ? "Today focus" : "By status"}</button>
-                  </div>
-                </div>
+              <div className="kanban-board-modern">
+                {columns.map((column) => {
+                  const items = sortedTasks.filter((task) => task.status === column.key);
 
-                {taskLayout === "status" ? (
-                  <div className="kanban-grid">
-                    {taskColumns.map((column) => (
-                      <section key={column.key} className={`kanban-column ${column.accent}`}>
-                        <div className="kanban-header">
-                          <div className="kanban-title-wrap">
-                            <span className={`kanban-dot ${column.accent}`} />
-                            <strong>{column.title}</strong>
-                          </div>
-                          <span className="count-pill">{column.items.length}</span>
+                  return (
+                    <section
+                      key={column.key}
+                      className={`modern-column ${column.accent}`}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const droppedTaskId = event.dataTransfer.getData("text/task-id") || draggedTaskId;
+                        if (!droppedTaskId) return;
+                        const droppedTask = sortedTasks.find((task) => task.id === droppedTaskId);
+                        if (!droppedTask || droppedTask.status === column.key) return;
+                        handleUpdateTaskStatus(droppedTaskId, column.key);
+                        setDraggedTaskId(null);
+                      }}
+                    >
+                      <div className="modern-column-header">
+                        <div className="modern-column-title-wrap">
+                          <span className={`modern-column-dot ${column.accent}`} />
+                          <span className="modern-column-title">{column.title}</span>
                         </div>
+                        <span className="modern-column-count">{items.length}</span>
+                      </div>
 
-                        <div className="kanban-stack">
-                          {column.items.length === 0 ? (
-                            <div className="empty-mini">No tasks here yet.</div>
-                          ) : (
-                            column.items.map((task) => (
-                              <article key={task.id} className="task-card-compact">
-                                <div className="task-card-top">
-                                  <div>
-                                    <div className="task-card-title">{task.title}</div>
-                                    <div className="task-card-copy">{task.description || "No extra details yet."}</div>
-                                  </div>
-                                  <button className="mini-delete" type="button" onClick={() => handleDeleteTask(task.id)}>
-                                    Delete
-                                  </button>
-                                </div>
+                      <div className="inline-create-row">
+                        <input
+                          value={columnDrafts[column.key]}
+                          placeholder="+ Add task"
+                          onChange={(event) => setColumnDrafts((current) => ({ ...current, [column.key]: event.target.value }))}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              handleInlineCreate(column.key);
+                            }
+                          }}
+                        />
+                      </div>
 
-                                <div className="task-card-bottom">
-                                  <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
-                                  <select
-                                    className={`status-select ${task.status}`}
-                                    value={task.status}
-                                    onChange={(event) => handleUpdateTaskStatus(task.id, event.target.value as TaskStatus)}
-                                  >
-                                    <option value="todo">To do</option>
-                                    <option value="in_progress">In progress</option>
-                                    <option value="done">Done</option>
-                                  </select>
-                                  <span className="meta-chip">{formatDate(task.dueDate)}</span>
-                                </div>
-                              </article>
-                            ))
-                          )}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="list-stack">
-                    {sortedVisibleTasks.length === 0 ? (
-                      <div className="empty-mini">No tasks here yet.</div>
-                    ) : (
-                      sortedVisibleTasks.map((task) => (
-                        <article key={task.id} className="task-card-compact list-row-task">
-                          <div className="task-card-top">
-                            <div>
-                              <div className="task-card-title">{task.title}</div>
-                              <div className="task-card-copy">{task.description || "No extra details yet."}</div>
+                      <div className="modern-column-stack">
+                        {items.map((task) => (
+                          <article
+                            key={task.id}
+                            className={`task-min-card ${selectedTaskId === task.id ? "active" : ""}`}
+                            draggable
+                            onDragStart={(event) => {
+                              setDraggedTaskId(task.id);
+                              event.dataTransfer.setData("text/task-id", task.id);
+                            }}
+                            onDragEnd={() => setDraggedTaskId(null)}
+                            onClick={() => setSelectedTaskId(task.id)}
+                          >
+                            <div className="task-min-title">{task.title}</div>
+                            <div className="task-min-meta">
+                              <span className={`mini-badge ${task.priority}`}>{priorityLabel(task.priority)}</span>
+                              <span className="mini-badge neutral">{formatDate(task.dueDate)}</span>
                             </div>
-                            <button className="mini-delete" type="button" onClick={() => handleDeleteTask(task.id)}>
-                              Delete
-                            </button>
-                          </div>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="notes-workspace">
+              <div className="workspace-toolbar">
+                <div>
+                  <h1 className="workspace-title">Notes</h1>
+                  <div className="workspace-subtitle">Separate from the main task screen, like a focused workspace tab.</div>
+                </div>
+              </div>
 
-                          <div className="task-card-bottom">
-                            <span className={`priority-chip ${task.priority}`}>{task.priority}</span>
-                            <select
-                              className={`status-select ${task.status}`}
-                              value={task.status}
-                              onChange={(event) => handleUpdateTaskStatus(task.id, event.target.value as TaskStatus)}
-                            >
-                              <option value="todo">To do</option>
-                              <option value="in_progress">In progress</option>
-                              <option value="done">Done</option>
-                            </select>
-                            <span className="meta-chip">{formatDate(task.dueDate)}</span>
+              <div className="notes-layout">
+                <section className="notes-editor-panel">
+                  <div className="panel-headline-row">
+                    <div>
+                      <div className="panel-title">New note</div>
+                      <div className="panel-subcopy">Rich text editor with fast capture flow.</div>
+                    </div>
+                    <button className={`ghost-pill ${notePinned ? "active" : ""}`} type="button" onClick={() => setNotePinned((value) => !value)}>
+                      {notePinned ? "Pinned" : "Pin"}
+                    </button>
+                  </div>
+
+                  <form className="editor-form" onSubmit={handleCreateNote}>
+                    <input
+                      className="inline-title-input"
+                      value={noteTitle}
+                      placeholder="Untitled note"
+                      onChange={(event) => setNoteTitle(event.target.value)}
+                    />
+                    <RichTextEditor value={noteContent} onChange={setNoteContent} />
+                    <button className="primary-action" type="submit" disabled={isPending}>Save note</button>
+                  </form>
+                </section>
+
+                <section className="notes-list-panel">
+                  <div className="panel-headline-row">
+                    <div>
+                      <div className="panel-title">Archive</div>
+                      <div className="panel-subcopy">All saved notes in one clean list.</div>
+                    </div>
+                  </div>
+
+                  <div className="notes-list-stack">
+                    {sortedNotes.length === 0 ? (
+                      <div className="empty-state-modern">No notes yet.</div>
+                    ) : (
+                      sortedNotes.map((note) => (
+                        <article key={note.id} className="note-list-card">
+                          <div>
+                            <div className="task-min-title">{note.title}</div>
+                            <div className="task-list-copy">{note.summary || "No preview yet."}</div>
+                          </div>
+                          <div className="task-min-meta">
+                            {note.isPinned ? <span className="mini-badge high">Pinned</span> : null}
+                            <span className="mini-badge neutral">{formatDate(note.updatedAt)}</span>
+                            <button className="ghost-text-button" type="button" onClick={() => handleDeleteNote(note.id)}>Delete</button>
                           </div>
                         </article>
                       ))
                     )}
                   </div>
-                )}
+                </section>
               </div>
             </div>
-          ) : null}
+          )}
+        </main>
 
-          <aside className={`side-column ${isNotes ? "full-width-side" : ""}`}>
-            <div className="section-card notes-composer-card">
-              <div className="section-heading-row">
-                <div>
-                  <div className="section-title">Notes lab</div>
-                  <div className="section-subtitle">Capture quick ideas, meeting notes, and product thinking.</div>
-                </div>
-                <button
-                  className={`top-pill ${notePinned ? "active" : ""}`}
-                  type="button"
-                  onClick={() => setNotePinned((value) => !value)}
+        {tab === "kanban" && selectedTask ? (
+          <aside className="task-detail-panel">
+            <div className="panel-headline-row">
+              <div>
+                <div className="panel-title">Task details</div>
+                <div className="panel-subcopy">Inline editing, no modal required.</div>
+              </div>
+              <button className="ghost-text-button" type="button" onClick={() => setSelectedTaskId(null)}>Close</button>
+            </div>
+
+            <div className="detail-form">
+              <div className="field compact-field">
+                <label htmlFor="detail-title">Title</label>
+                <input
+                  id="detail-title"
+                  value={selectedTask.title}
+                  onChange={(event) => saveTaskPatch(selectedTask.id, { title: event.target.value }, "Failed to update task.")}
+                />
+              </div>
+
+              <div className="field compact-field">
+                <label htmlFor="detail-description">Description</label>
+                <textarea
+                  id="detail-description"
+                  rows={6}
+                  value={selectedTask.description}
+                  onChange={(event) => saveTaskPatch(selectedTask.id, { description: event.target.value }, "Failed to update task.")}
+                />
+              </div>
+
+              <div className="field compact-field">
+                <label htmlFor="detail-priority">Priority</label>
+                <select
+                  id="detail-priority"
+                  value={selectedTask.priority}
+                  onChange={(event) => saveTaskPatch(selectedTask.id, { priority: event.target.value as TaskPriority }, "Failed to update task.")}
                 >
-                  {notePinned ? "Pinned" : "Pin note"}
-                </button>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
               </div>
 
-              <form className="form-grid" onSubmit={handleCreateNote}>
-                <div className="field">
-                  <label htmlFor="note-title">Title</label>
-                  <input id="note-title" value={noteTitle} placeholder="Optional title" onChange={(event) => setNoteTitle(event.target.value)} />
-                </div>
-
-                <RichTextEditor value={noteContent} onChange={setNoteContent} />
-
-                <button className="primary-button" type="submit" disabled={isPending}>Save note</button>
-              </form>
-            </div>
-
-            <div className="section-card">
-              <div className="section-heading-row">
-                <div>
-                  <div className="section-title">Notes archive</div>
-                  <div className="section-subtitle">
-                    {isNotes ? "Focused notes mode with all saved entries." : "A denser notes list inspired by workspace sidepanels."}
-                  </div>
-                </div>
+              <div className="field compact-field">
+                <label htmlFor="detail-status">Status</label>
+                <select
+                  id="detail-status"
+                  value={selectedTask.status}
+                  onChange={(event) => saveTaskPatch(selectedTask.id, { status: event.target.value as TaskStatus }, "Failed to update task.")}
+                >
+                  <option value="todo">Backlog</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="done">Done</option>
+                </select>
               </div>
 
-              <div className="notes-stack">
-                {visibleNotes.length === 0 ? (
-                  <div className="empty-mini">Create your first PhantomDS note.</div>
-                ) : (
-                  visibleNotes.map((note) => (
-                    <article className="note-card-compact" key={note.id}>
-                      <div className="task-card-top">
-                        <div>
-                          <div className="task-card-title">{note.title}</div>
-                          <div className="task-card-copy">{note.summary || "No preview yet."}</div>
-                        </div>
-                        <button className="mini-delete" type="button" onClick={() => handleDeleteNote(note.id)}>
-                          Delete
-                        </button>
-                      </div>
-                      <div className="task-card-bottom">
-                        {note.isPinned ? <span className="priority-chip high">Pinned</span> : null}
-                        <span className="meta-chip">Updated {formatDate(note.updatedAt)}</span>
-                      </div>
-                    </article>
-                  ))
-                )}
+              <div className="field compact-field">
+                <label htmlFor="detail-due-date">Due date</label>
+                <input
+                  id="detail-due-date"
+                  type="date"
+                  value={selectedTask.dueDate?.slice(0, 10) ?? ""}
+                  onChange={(event) => saveTaskPatch(selectedTask.id, { dueDate: event.target.value || null }, "Failed to update task.")}
+                />
               </div>
+
+              <button className="danger-action" type="button" onClick={() => handleDeleteTask(selectedTask.id)}>Delete task</button>
             </div>
           </aside>
-        </section>
+        ) : null}
       </div>
 
-      {toast ? (
-        <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">
-          {toast.message}
-        </div>
-      ) : null}
+      {toast ? <div className={`toast-modern ${toast.tone}`}>{toast.message}</div> : null}
     </>
   );
 }
+
